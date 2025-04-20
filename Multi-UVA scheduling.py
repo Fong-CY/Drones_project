@@ -9,7 +9,7 @@ def initialize_parameters():
     speed = 1.0  # 無人機速度（km/min）
     max_distance = 3  # 節點之間的最大距離
     energy_rate = 2  # 每公里能耗
-    S = 20  # 傳感器節點數量（不包括基站）
+    S = 5  # 傳感器節點數量（不包括基站）
 
     # 隨機生成節點的座標
     coordinates = np.random.rand(S + 1, 2) * max_distance  # 節點座標 (x, y)
