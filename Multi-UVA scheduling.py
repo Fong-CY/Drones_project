@@ -7,7 +7,7 @@ def initialize_parameters():
     speed = 1.0  # 無人機速度（km/min）
     max_distance = 3  # 節點之間的最大距離
     energy_rate = 2  # 每公里能耗
-    S = 5  # 傳感器節點數量（不包括基站）
+    S = 20  # 傳感器節點數量（不包括基站）
 
     # 隨機生成節點的座標
     coordinates = np.random.rand(S + 1, 2) * max_distance  # 節點座標 (x, y)
@@ -77,12 +77,16 @@ def visualize_individual_drone_schedules(coordinates, drones, patrol_counts, wei
         for i, (x, y) in enumerate(coordinates):
             if i == 0:
                 plt.scatter(x, y, color='red', label='Base Station (0)', zorder=3)
-                plt.text(x, y, f' {i} (Base)', fontsize=12, color='black', zorder=4)
+                plt.text(
+                    x, y,
+                    f'Node {i} (Base)\nCoord: ({x:.1f}, {y:.1f})\nWeight: {weights[i]:.1f}\nVisits: {int(patrol_counts[i])}\nLast: {int(time_since_last_visit[i])}',
+                    fontsize=12, color='black', zorder=4
+                )
             else:
                 plt.scatter(x, y, color='blue', zorder=3)
                 plt.text(
                     x, y,
-                    f' {i}\nWeight: {weights[i]:.1f}\nVisits: {int(patrol_counts[i])}\nLast: {int(time_since_last_visit[i])}',
+                    f'Node {i}\nCoord: ({x:.1f}, {y:.1f})\nWeight: {weights[i]:.1f}\nVisits: {int(patrol_counts[i])}\nLast: {int(time_since_last_visit[i])}',
                     fontsize=10, color='black', zorder=4
                 )
 
@@ -94,7 +98,7 @@ def visualize_individual_drone_schedules(coordinates, drones, patrol_counts, wei
             plt.plot(
                 [coordinates[start][0], coordinates[end][0]],
                 [coordinates[start][1], coordinates[end][1]],
-                'g-' if start == 0 or end == 0 else 'b-', alpha=0.7
+                'g-' if start == 0 or end == 0 else 'b-', alpha=0.7, linewidth = 1
             )
 
         plt.title(f"Drone {idx + 1} Patrol Schedule", fontsize=16)
@@ -103,6 +107,51 @@ def visualize_individual_drone_schedules(coordinates, drones, patrol_counts, wei
         plt.legend()
         plt.grid(True)
         plt.show()
+
+def analyze_mission_paths(drones):
+    for drone_idx, drone in enumerate(drones):
+        print(f"\nDrone {drone_idx + 1} Missions:")
+        path = drone["visited_nodes"]
+        current_mission = []
+        mission_count = 1
+        
+        for node in path:
+            current_mission.append(node)
+            # 當到達基地台(0)且不是路徑的起點時，表示一個任務完成
+            if node == 0 and len(current_mission) > 1:
+                # 計算這次任務訪問的獨特節點
+                unique_nodes = set(current_mission[1:-1])  # 不包括起點和終點的0
+                print(f"Mission {mission_count}:")
+                print(f"  Full path: {' -> '.join(map(str, current_mission))}")
+                print(f"  Unique nodes visited: {sorted(unique_nodes)}")
+                print(f"  Path length: {len(current_mission)} nodes\n")
+                
+                # 重置為新任務
+                current_mission = [0]
+                mission_count += 1
+            
+        # 處理最後一個可能未完成的任務
+        if len(current_mission) > 1:
+            unique_nodes = set(current_mission[1:])
+            print(f"Final Mission (might be incomplete):")
+            print(f"  Full path: {' -> '.join(map(str, current_mission))}")
+            print(f"  Unique nodes visited: {sorted(unique_nodes)}")
+            print(f"  Path length: {len(current_mission)} nodes\n")
+
+# 使用示例
+def print_mission_analysis(drones):
+    print("\n=== Mission Path Analysis ===")
+    analyze_mission_paths(drones)
+    
+    # 添加總體統計
+    print("=== Overall Statistics ===")
+    for drone_idx, drone in enumerate(drones):
+        path = drone["visited_nodes"]
+        missions = sum(1 for i in range(1, len(path)) if path[i] == 0)
+        print(f"\nDrone {drone_idx + 1}:")
+        print(f"  Total missions: {missions}")
+        print(f"  Total nodes visited: {len(path)}")
+        print(f"  Average nodes per mission: {(len(path)-1) / max(1, missions):.2f}")
 
 # === 主程式執行 ===
 if __name__ == "__main__":
@@ -129,3 +178,6 @@ if __name__ == "__main__":
 
     # 為每台無人機單獨視覺化
     visualize_individual_drone_schedules(coordinates, drones, patrol_counts, weights, time_since_last_visit)
+
+    # 分析任務路徑
+    print_mission_analysis(drones)
