@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import heapq
 
 # === 初始化參數 ===
 def initialize_parameters(grid_size=5):
@@ -29,8 +30,43 @@ def initialize_parameters(grid_size=5):
 
     return B, t, b, S, coordinates, weights
 
+
+# === A* ===
+def a_star_path(start, goal, t, h_func):
+    open_set = [(h_func(start, goal), 0, start, [start])]
+    visited = set()
+
+    while open_set:
+        f, g, current, path = heapq.heappop(open_set)
+
+        if current == goal:
+            return path
+
+        if current in visited:
+            continue
+        visited.add(current)
+
+        for neighbor in range(len(t)):
+            if neighbor in visited or neighbor == current:
+                continue
+            cost = t[current][neighbor]
+            heapq.heappush(open_set, (
+                g + cost + h_func(neighbor, goal),
+                g + cost,
+                neighbor,
+                path + [neighbor]
+            ))
+
+    return None  # 找不到路徑
+
+# === Heuristic(歐式距離) ===
+def heuristic(n1, n2, coordinates):
+    x1, y1 = coordinates[n1]
+    x2, y2 = coordinates[n2]
+    return np.linalg.norm([x1 - x2, y1 - y2])
+
 # === 單輪排程（會被執行兩次）===
-def single_patrol_round(B, t, b, S, weights, num_drones, max_time, alpha = 0.5, require_all_visit=False, verbose=False):
+def single_patrol_round(B, t, b, S, weights, num_drones, max_time, alpha=0.5, require_all_visit=False, verbose=False, coordinates=None):
     drones = [{
         "battery": B,
         "current_node": 0,
@@ -73,30 +109,50 @@ def single_patrol_round(B, t, b, S, weights, num_drones, max_time, alpha = 0.5, 
 
             target_node = np.argmax(priorities)
 
-            if priorities[target_node] > -0.5:  # 只要有可飛目標就出發
-                drone["battery"] -= b[current_node][target_node]
-                drone["total_time"] += t[current_node][target_node]
-                drone["visited_nodes"].append(target_node)
-                patrol_counts[target_node] += 1
-                time_since_last_visit[target_node] = 0
-                visited_once.add(target_node)
-                drone["current_node"] = target_node
+            #if priorities[target_node] > -0.5:  # 只要有可飛目標就出發
+            #    drone["battery"] -= b[current_node][target_node]
+            #    drone["total_time"] += t[current_node][target_node]
+            #    drone["visited_nodes"].append(target_node)
+            #    patrol_counts[target_node] += 1
+            #    time_since_last_visit[target_node] = 0
+            #    visited_once.add(target_node)
+            #    drone["current_node"] = target_node
 
-                if verbose:
-                    print(f"[Step {step}] Drone {i+1} flew {current_node} → {target_node} | Battery: {drone['battery']} | Time: {drone['total_time']}")
-            else:
-                if current_node != 0:
-                    # 回基地充電
-                    drone["total_time"] += t[current_node][0]
-                    drone["visited_nodes"].append(0)
-                    drone["battery"] = B
-                    drone["current_node"] = 0
+            #    if verbose:
+            #        print(f"[Step {step}] Drone {i+1} flew {current_node} → {target_node} | Battery: {drone['battery']} | Time: {drone['total_time']}")
+            #else:
+            #    if current_node != 0:
+            #        # 回基地充電
+            #        drone["total_time"] += t[current_node][0]
+            #        drone["visited_nodes"].append(0)
+            #        drone["battery"] = B
+            #        drone["current_node"] = 0
 
-                    if verbose:
-                        print(f"[Step {step}] Drone {i+1} returned to base from {current_node} → 0 | Battery recharged | Time: {drone['total_time']}")
-                else:
-                    if verbose:
-                        print(f"[Step {step}] Drone {i+1} is idle at base.")
+            #        if verbose:
+            #            print(f"[Step {step}] Drone {i+1} returned to base from {current_node} → 0 | Battery recharged | Time: {drone['total_time']}")
+            #    else:
+            #        if verbose:
+            #            print(f"[Step {step}] Drone {i+1} is idle at base.")
+
+            if priorities[target_node] > -0.5:
+                # 使用 A* 規劃完整路徑
+                path = a_star_path(current_node, target_node, t, lambda a, b: heuristic(a, b, coordinates))
+
+                if path is None:
+                    continue  # 找不到合法路徑
+
+                for step_node in path[1:]:  # 忽略目前位置
+                    drone["battery"] -= b[drone["current_node"]][step_node]
+                    drone["total_time"] += t[drone["current_node"]][step_node]
+                    drone["visited_nodes"].append(step_node)
+                    patrol_counts[step_node] += 1
+                    time_since_last_visit[step_node] = 0
+                    visited_once.add(step_node)
+                    drone["current_node"] = step_node
+
+                    if drone["battery"] <= 0 or drone["total_time"] >= max_time:
+                        break
+
 
     if verbose:
         print("\n=== Patrol Summary ===")
@@ -146,7 +202,7 @@ def visualize_individual_drone_schedules(coordinates, drones_round, patrol_count
                 [y_start, y_end],
                 'g-' if start == 0 or end == 0 else 'b-',
                 alpha=0.7,
-                linewidth = 1
+                linewidth=1
             )
 
             # 繪製箭頭
@@ -237,29 +293,54 @@ if __name__ == "__main__":
 
     num_drones = 1
     max_time = 100
+    total_rounds = 5
 
-    print("=== 第一輪（探索階段） ===")
-    drones_round1, patrol_counts1, time_since_last_visit1 = single_patrol_round(
-        B, t, b, S, weights, num_drones, max_time, require_all_visit=True
-    )
+    #print("=== 第一輪（探索階段） ===")
+    #drones_round1, patrol_counts1, time_since_last_visit1 = single_patrol_round(
+    #    B, t, b, S, weights, num_drones, max_time, require_all_visit=True
+    #)
 
     # 第一輪可視化與分析
-    visualize_individual_drone_schedules(coordinates, drones_round1, patrol_counts1, weights, time_since_last_visit1)
-    print_mission_analysis(drones_round1)
+    #visualize_individual_drone_schedules(coordinates, drones_round1, patrol_counts1, weights, time_since_last_visit1)
+    #print_mission_analysis(drones_round1)
 
     # 更新節點權重
-    weights = update_weights_randomly(S)
-    print("\n更新後節點權重：", weights)
+    #weights = update_weights_randomly(S)
+    #print("\n更新後節點權重：", weights)
 
-    print("\n=== 第二輪（依照權重優先巡邏） ===")
-    drones_round2, patrol_counts2, time_since_last_visit2 = single_patrol_round(
-        B, t, b, S, weights, num_drones, max_time, require_all_visit=True
-    )
+    #print("\n=== 第二輪（依照權重優先巡邏） ===")
+    #drones_round2, patrol_counts2, time_since_last_visit2 = single_patrol_round(
+    #    B, t, b, S, weights, num_drones, max_time, require_all_visit=True
+    #)
 
     # 合併巡邏統計
-    total_patrols = patrol_counts1 + patrol_counts2
+    #total_patrols = patrol_counts1 + patrol_counts2
 
     # 第二輪可視化與分析
-    visualize_individual_drone_schedules(coordinates, drones_round2, total_patrols, weights, time_since_last_visit2)
-    print_mission_analysis(drones_round2)
+    #visualize_individual_drone_schedules(coordinates, drones_round2, total_patrols, weights, time_since_last_visit2)
+    #print_mission_analysis(drones_round2)
     
+    # 總巡邏次數統計
+    cumulative_patrol_counts = np.zeros(S + 1)
+
+    for round_num in range(1, total_rounds + 1):
+        print(f"\n=== 第 {round_num} 輪 ===")
+
+        # 每輪強制完整拜訪所有節點
+        drones_round, patrol_counts, time_since_last_visit = single_patrol_round(
+            B, t, b, S, weights, num_drones, max_time,
+            require_all_visit=True,
+            verbose=False,
+            coordinates=coordinates
+        )
+
+        # 更新總巡邏統計
+        cumulative_patrol_counts += patrol_counts
+
+        # 視覺化
+        visualize_individual_drone_schedules(coordinates, drones_round, cumulative_patrol_counts, weights, time_since_last_visit)
+        print_mission_analysis(drones_round)
+
+        # 更新權重（下一輪使用）
+        weights = update_weights_randomly(S)
+        print("更新後節點權重：", weights)
